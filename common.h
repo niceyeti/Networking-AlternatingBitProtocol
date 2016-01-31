@@ -1,5 +1,17 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <string.h>
+#include <time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <fcntl.h>
+
 #define ACK 0
 #define NACK 1
+//TODO: get rid fo magic numbers and define maxes in terms of a single parameter, eg sizeof(struct Packet)
 #define PKT_DATA_MAX_LEN 65535
 #define RXTX_BUFFER_SIZE PKT_DATA_MAX_LEN + 64
 #define CORRUPT 1 
@@ -7,6 +19,13 @@
 #define U16_PRIME 65497
 #define TRUE 1
 #define FALSE 0
+
+
+#define SERVER_PORT 5432
+#define MAX_LINE 256
+#define SERVER_PORT 5432
+#define MAX_LINE 80
+
 
 typedef unsigned char byte;
 
