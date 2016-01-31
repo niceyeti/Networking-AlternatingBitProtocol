@@ -40,7 +40,7 @@ void lintToBytes(const int i, byte obuf[4]);
 void setDataChecksum(byte chk[], byte* data);
 void setSocketTimeout(int sockfd, int timeout_s);
 void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt);
-void SendFile(FILE* fptr, int sock, struct sockaddr_in* sin);
+void SendFile(f* fptr, int sock, struct sockaddr_in* sin);
 int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data);
 int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackPkt);
 void cleanPacket(struct Packet* pkt);

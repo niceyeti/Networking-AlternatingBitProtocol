@@ -201,7 +201,7 @@ void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt)
 /*
 Top level function for sending some file/stream. This implements the Kurose/Ross state rdt3.0 machine.
 */
-void SendFile(FILE* fptr, int sock, struct sockaddr_in* sin)
+void SendFile(f* fptr, int sock, struct sockaddr_in* sin)
 {
 	int seqnum = 0;
 	int slen;
