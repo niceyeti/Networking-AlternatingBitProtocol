@@ -11,25 +11,29 @@
 
 #define ACK 0
 #define NACK 1
+#define CORRUPT 2
+#define NOT_CORRUPT 3
+#define TIMEOUT 5
+
+
+
 //TODO: get rid fo magic numbers and define maxes in terms of a single parameter, eg sizeof(struct Packet)
 #define PKT_DATA_MAX_LEN 65535
 #define RXTX_BUFFER_SIZE PKT_DATA_MAX_LEN + 64
-#define CORRUPT 1 
-#define NOT_CORRUPT 0
 #define U16_PRIME 65497
 #define TRUE 1
 #define FALSE 0
 
 
 #define SERVER_PORT 5432
-#define MAX_LINE 256
+#define MAX_RX_LINE 256
 #define SERVER_PORT 5432
 #define MAX_LINE 80
 
-
 typedef unsigned char byte;
 
-//Let all U16's, etc, be represented by byte buffers of length mod 2; this makes it easy to htons/htonl, etc
+//Let all U16's, etc, be represented by byte buffers of length mod 2; this makes it easy to htons/htonl, etc.
+//Read the 4-byte buffers from left to right: so 3 == [0,0,0,0011]
 struct Packet{
 	//Let zero represent ACK
 	byte ack;
@@ -54,9 +58,9 @@ int isSequentialAck(struct Packet* pkt, int seqnum);
 int getHeaderChecksum(struct Packet* pkt);
 int getDataChecksum(struct Packet* pkt);
 int isCorruptPacket(struct Packet* pkt);
-void bytesToLint(const byte buf[4], int* checksum);
+int bytesToLint(const byte buf[4]);
 void lintToBytes(const int i, byte obuf[4]);
-void setDataChecksum(byte chk[], byte* data);
+void setDataChecksum(struct Packet* pkt);
 void setSocketTimeout(int sockfd, int timeout_s);
 void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt);
 void SendFile(FILE* fptr, int sock, struct sockaddr_in* sin);
