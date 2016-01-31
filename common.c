@@ -1,0 +1,425 @@
+#define ACK 0
+#define NACK 1
+#define PKT_DATA_MAX_LEN 65535
+#define RXTX_BUFFER_SIZE PKT_DATA_MAX_LEN + 64
+#define CORRUPT 1 
+#define NOT_CORRUPT 0
+#define U16_PRIME 65497
+#define TRUE 1
+#define FALSE 0
+
+typedef unsigned char byte;
+
+//Let all U16's, etc, be represented by byte buffers of length mod 2; this makes it easy to htons/htonl, etc
+struct Packet{
+	//Let zero represent ACK
+	byte ack;
+    //This packet's sequence number (may not be used)
+	byte seqnum[4];
+	//Length of the data in this packet
+	byte dataLen[4];
+	//the header checksum
+	byte hdrChecksum[4];
+	//purely for id purposes, eg with wireshark
+	byte name[4];
+	//checksum over packet data
+	byte dataChecksum[4];
+	//Bytes allocated for this packet's data buffer. Its easier to statically allocate the data for now, instead of managing a ptr to dynamic mem.
+	byte data[PKT_DATA_MAX_LEN];
+}
+
+//// Super simplified serialization: raw memcpy between Packet/buffer. Needs more testing; this may depend on endianness of end systems.
+void SerializePacket(struct Packet& pkt, byte buf[RXTX_BUFFER_SIZE])
+{	
+	//super awesome benefit of not using dynamic mem in packet, since packet size is static
+	memset((void*)buf,0,RXTX_BUFFER_SIZE);
+	memcpy((void*)buf,(void*)pkt,sizeof(struct Packet));
+}
+void DeserializePacket(const char buf[RXTX_BUFFER_SIZE], struct Packet& pkt)
+{	
+	//super awesome benefit of not using dynamic mem in packet, since packet size is static
+	memcpy((void*)pkt,(void*)buf,sizeof(struct Packet));
+}
+
+//For simple protocols: just verify packet ack field == ACK. Returns TRUE if ACK, else FALSE.
+int isAck(struct Packet* pkt)
+{
+	return pkt->ack == ACK ? TRUE : FALSE;
+}
+
+//For more complicated protocols: verify pkt contains ACK and has expected seqnum.
+//Returns TRUE if packet is ACK and matches passed seqnum; else FALSE.
+int isAck(struct Packet& pkt, int seqnum)
+{
+	int result = FALSE;
+	
+	if(isAck(pkt) == TRUE){
+		result = pkt->seqnum == seqnum ? TRUE : FALSE;
+		if(result == FALSE){
+			printf("ERROR received ACK with incorrect seqnum: expected %d but rxed %d\r\n",seqnum,pkt->seqnum);
+		}
+	}
+	else{
+		printf("ERROR received ACK with incorrect seqnum: expected %d but rxed %d\r\n",seqnum,pkt->seqnum);		
+	}
+	
+	return result;
+}
+
+/*
+	Returns sum of byte mod some-16b-prime of all the header fields.
+	This includes the data-checksum, but not the data.
+*/
+int getHeaderChecksum(struct Packet& pkt)
+{
+	int i, sum = 0;
+	
+	sum += pkt->ack;
+	for(i = 0; i < 4; i++){
+		sum += pkt->seqnum[i];
+	}
+	for(i = 0; i < 4; i++){
+		sum += pkt->dataLen[i];
+	}
+	for(i = 0; i < 4; i++){
+		sum += pkt->name[i];
+	}
+	for(i = 0; i < 4; i++){
+		sum += pkt->dataChecksum[i];
+	}
+	
+	return sum % U16_PRIME;
+}
+
+//Get the checksum of some data buffer, given its length in bytes. Returns 0 if datalen is zero (no data)
+int getDataChecksum(struct Packet& pkt)
+{
+	int i, sum, checksum = 0;
+	
+	//only set checksum if there is any data; otherwise, it is set to zero
+	if(pkt->dataLen > 0){
+		for(i = 0, sum = 0; i < pkt->dataLen; i++){
+			sum += (int)pkt->data[i];
+		}
+		checksum = sum % U16_PRIME;
+	}
+
+	return checksum;
+}
+
+int isCorruptPacket(struct Packet& pkt)
+{
+  	int result, checksum;
+	byte buf[4];
+		
+	result = CORRUPT;
+	
+	//check the header checksum
+	checksum = getHeaderChecksum(pkt);
+	lintToBytes(buf,checksum);
+	if(strncmp(buf,pkt->hdrChecksum,4) == 0){
+		//check the data checksum
+		checksum = getDataChecksum(pkt);
+		lintToBytes(buf,checksum);
+		if(strncmp(buf,pkt->dataChecksum,4) == 0){
+			ret = NOT_CORRUPT;
+		}
+		else{
+			printf("ERROR rxed packet with correct header checksum, but incorrect data checksum. flagged as CORRUPT\r\n");
+		}
+	}
+	else{
+		printf("ERROR rxed packet with incorrect header checksum, flagged as CORRUPT\r\n");
+	}
+	
+	return ret;
+}
+//////////////// end packet class ///////////////
+
+void bytesToLint(const byte buf[4], int* checksum)
+{
+	*checksum = 0;
+	*checksum = (int)buf[0] & 0xFF;
+	*checksum    |= (int)buf[1] & 0xFF00;
+	*checksum    |= (int)buf[2] & 0xFF0000;
+	*checksum    |= (int)buf[3] & 0xFF000000;
+	
+	*checksum = htonl(*checksum);	
+}
+
+void lintToBytes(const int i, byte obuf[4])
+{
+	int _int = ntohl(i);
+	
+	obuf[0] = (byte)(_int & 0xFF);
+	obuf[1] = (byte)(_int & 0xFF00);
+	obuf[2] = (byte)(_int & 0xFF0000);
+	obuf[3] = (byte)(_int & 0xFF000000);
+}
+
+/*
+Fills chk[] with bytes of the checksum of data, some null-terminated data buffer.
+
+Algorithm:
+	
+*/
+void setDataChecksum(byte chk[], byte* data)
+{
+ 	int checksum = getDataChecksum(data,strnlen((char*)data,PKT_DATA_MAX_LEN);
+	lintToBytes(chk,checksum);
+}
+
+//Sets the socket timeout
+void setSocketTimeout(int sockfd, int timeout_s)
+{	
+	struct timeval tv;
+
+	tv.tv_sec = timeout_s;  // second timeout
+	tv.tv_usec = 0;  // 0 us
+
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (void *)&tv,sizeof(struct timeval));
+}
+
+
+
+/*
+Constructs a packet from data by:
+	-cleaning old packet contents (freeing old data)
+	-allocing new data in packet, and copying in 
+	-setting ack
+	-setting name (just for debugging)
+	-checksumming data and placing this in the checksum field
+	
+To make an empty packet (such as ACK/NACK packets), pass NULL or 0 for "char* data" param.
+*/
+void MakePacket(int seqnum, int ack, char* data, struct Packet* pkt)
+{
+	cleanPacket(pkt);
+	
+	pkt->seqnum = seqnum;
+	//copy in the data, if any
+	if(data != 0){
+		pkt->datalen = strnlen(data,PKT_DATA_MAX_LEN);
+		if(pkt->datalen > PKT_DATA_MAX_LEN - 32){
+			printf("ERROR ");
+		}
+		strncpy(pkt->data,data,pkt->datalen);
+	}
+	else{
+		pkt->datalen = 0;
+		memset(pkt->data,0,PKT_DATA_MAX_LEN);
+	}
+	
+	//do the data checksum; must be done before the header checksum
+	setDataChecksum(pkt);
+	
+	//set the ack field (also must be done before )
+	pkt->ack = ack == ACK ? (byte)ACK : (byte)NACK;
+	
+	//an apparent sequence of bytes, when viewed in wireshark
+	pkt->name[0] = 0xFF;
+	pkt->name[1] = 0;
+	pkt->name[2] = 0xFF;
+	pkt->name[3] = 0;
+	
+	//must be done only after data checksum is set
+	pkt->hdrChecksum = getHeaderChecksum(pkt);
+}
+
+/*
+Top level function for sending some file/stream. This implements the Kurose/Ross state rdt3.0 machine.
+*/
+void SendFile(f* fptr, int sock, struct sockaddr_in* sin)
+{
+	int seqnum = 0;
+	int slen;
+	char buf[128];
+	
+	memset(buf,0,128);
+	
+	/* main loop: get and send lines of text */
+	while(fgets(buf, 80, fp) != NULL){
+		slen = strnlen(buf,127);
+		buf[slen] ='\0';
+		
+		SendData(sock,sin,buf,seqnum);
+		
+		//update seqnum, which in this case just alternates between 0 and 1
+		seqnum++;
+		seqnum %= 2;
+	}	
+	
+	printf("SEND COMPLETED!\r\n");
+}
+
+
+/*
+Must make sure the transmission delay is larger than the propagation delay.
+See Kurose on Ethernet.
+Derivation of 51.2 us.
+Propagation delay constraint is why ethernet must be short range.
+
+
+	Top level client function for sending a single packet. This implements the
+	stop-and-wait protocol state machine described by Kurose and Ross in figure 3.10:
+		
+	client calls CliSend():
+		1) make and send a packet (with checksum)
+		2) wait for ACK/NACK:
+			if NACK:
+			 goto 2
+			if ACK:
+			  goto 3
+		3) return
+*/
+int SendData(int sock, struct sockaddr_in* addr, int seqnum, char* data)
+{
+	int response;
+	int sendSuccessful;
+	const int SENDING = 0;
+	const int AWAIT_ACK = 1;
+	int state;
+	//the packet for sending data
+	struct Packet txPkt;
+	//the packet in which to receive ACK/NACK messages, exclusively
+	struct Packet ackPkt;
+	
+	memset(txPkt,0,sizeof(struct Packet));
+	memset(ackPkt,0,sizeof(struct Packet));
+	
+	makePacket(seqnum,ACK,data,&txPkt);
+	state = SENDING;
+	sendSuccessful = FALSE;
+	
+	//The state machine for sending a single packet: send until a positive ACK is received
+	while(sendSuccessful != TRUE ){
+
+		switch(state){
+			//send this packet
+			case SENDING:
+				sendPacket(&txPkt,sock,addr);
+				state = AWAIT_ACK;
+			break;
+
+			//await packet acknowledgment from receiver				
+			case AWAIT_ACK:
+				//block with timeout for ACK/NACK
+				response = awaitAck(sock,addr,seqnum,&ackPkt)
+				switch(response){
+					case ACK:
+						sendSuccessful = TRUE;
+					break;
+					
+					//for all failure cases, just return to send state to re-send
+					//TODO: add retry-count limit
+					case NACK:
+					case CORRUPT:
+					case TIMEOUT:
+						state = SENDING;
+						break;
+					
+					default:
+						printf("ERROR unmapped state result from _awaitAck function\r\n");
+						break;
+				}
+			break;
+			
+			default:
+				printf("ERROR unmapped state in _send()\r\n");
+			break;
+		}
+	}
+	
+	return 
+}
+
+/*
+Blocks until we receive an ACK packet from the destination, or timeout occurs.
+This implements the wait-for-ack state. We call recvfrom (without blocking) until
+we receive an uncorrupted ACK, NACK, or until a timout occurs.
+
+
+Precondition: This function expects that sockfd is a socket with a timeout (socket for which
+setsockopts has been called). The intended behavior is for recvfrom to block with a timeout.
+
+Returns: ACK, NACK, TIMEOUT.
+*/
+int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackPkt)
+{
+	int rxed, result;
+	int sock_len = sizeof(struct sockaddr_in);
+	char buf[RXTX_BUFFER_SIZE];
+	int ack = NACK;
+	
+	memset(buf,0,RXTX_BUFFER_SIZE);
+	
+	//block until we receive an ACK packet, or timeout occurs (returns -1)
+	rxed = recvfrom(sock,buf,RXTX_BUFFER_SIZE-1, 0, (struct sockaddr *)addr, &sock_len);
+	
+	//either a packet was received, or timeout occurred (other errors also possible, but timeout is most likely if packet was dropped)
+	if(rxed >= 0){
+		//received packet: extract the received packet and proceed to check its validity
+		DeserializePacket(buf,ackPkt);
+		
+		//check the packet's status
+		if(!isCorrupt(ackPkt)){
+			if(isAck(pkt,seqnum)){
+				printf("Successfully received ACK packet\r\n");
+				result = ACK;
+			}
+			else{
+				result = NACK;
+				printf("NACK or incorrect seqnum received: pkt->seqnum=%d expected: %d ; pkt->ack=%s",pkt->seqnum,seqnum, (pkt->ack == ACK ? "ACK" : "NACK"));
+			}
+		}
+		else{
+			printf("ERROR corrupt packet received. This should not be reachable in assignment's network conditions\r\n");
+			//just flag it as a NACK to signal failure
+			result = NACK;
+		}
+	}
+	else if(result == -1){
+		//only reachable if timeout occurred, though other errors are possible
+		printf("WARN timeout waiting for packet ACK\r\n");
+		result = TIMEOUT;
+	}
+	else{
+		//should be unreachable
+		printf("I have no idea what went wrong! \r\n");
+		result = NACK;
+	}
+	
+	return result;
+}
+
+void cleanPacket(struct Packet* pkt)
+{
+	memset((void*)pkt,0,sizeof(struct Packet));
+}
+
+/*
+The raw send utility. Serializes a packet into the provided sendBuf, then sends
+it over udp.
+*/
+void sendPacket(struct Packet* pkt, int sock, struct sockaddr_in * sin)
+{
+	int pktLen;
+	byte sendBuf[RXTX_BUFFER_SIZE];
+
+	memset(sendBuf,0,RXTX_BUFFER_SIZE);
+	
+	SerializePacket(pkt,sendBuf);
+	pktLen = strnlen(sendBuf,RXTX_BUFFER_SIZE-1);
+
+	if(pktLen > (PKT_DATA_MAX_LEN - 32)){
+		printf("WARN possible packet data overrun: pkt data size > %d\r\n",(PKT_DATA_MAX_LEN-32));
+	}
+	
+	if(sendto(sock, sendBuf, pktLen+1, 0, (struct sockaddr *)sin, sizeof(struct sockaddr)) < 0){
+		perror("SendTo Error\n");
+		exit(1);
+	}
+}
+
+
+
