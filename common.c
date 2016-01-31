@@ -1,41 +1,13 @@
-#define ACK 0
-#define NACK 1
-#define PKT_DATA_MAX_LEN 65535
-#define RXTX_BUFFER_SIZE PKT_DATA_MAX_LEN + 64
-#define CORRUPT 1 
-#define NOT_CORRUPT 0
-#define U16_PRIME 65497
-#define TRUE 1
-#define FALSE 0
-
-typedef unsigned char byte;
-
-//Let all U16's, etc, be represented by byte buffers of length mod 2; this makes it easy to htons/htonl, etc
-struct Packet{
-	//Let zero represent ACK
-	byte ack;
-    //This packet's sequence number (may not be used)
-	byte seqnum[4];
-	//Length of the data in this packet
-	byte dataLen[4];
-	//the header checksum
-	byte hdrChecksum[4];
-	//purely for id purposes, eg with wireshark
-	byte name[4];
-	//checksum over packet data
-	byte dataChecksum[4];
-	//Bytes allocated for this packet's data buffer. Its easier to statically allocate the data for now, instead of managing a ptr to dynamic mem.
-	byte data[PKT_DATA_MAX_LEN];
-}
+#include "common.h"
 
 //// Super simplified serialization: raw memcpy between Packet/buffer. Needs more testing; this may depend on endianness of end systems.
-void SerializePacket(struct Packet& pkt, byte buf[RXTX_BUFFER_SIZE])
+void serializePacket(struct Packet& pkt, byte buf[RXTX_BUFFER_SIZE])
 {	
 	//super awesome benefit of not using dynamic mem in packet, since packet size is static
 	memset((void*)buf,0,RXTX_BUFFER_SIZE);
 	memcpy((void*)buf,(void*)pkt,sizeof(struct Packet));
 }
-void DeserializePacket(const char buf[RXTX_BUFFER_SIZE], struct Packet& pkt)
+void deserializePacket(const char buf[RXTX_BUFFER_SIZE], struct Packet& pkt)
 {	
 	//super awesome benefit of not using dynamic mem in packet, since packet size is static
 	memcpy((void*)pkt,(void*)buf,sizeof(struct Packet));
@@ -49,7 +21,7 @@ int isAck(struct Packet* pkt)
 
 //For more complicated protocols: verify pkt contains ACK and has expected seqnum.
 //Returns TRUE if packet is ACK and matches passed seqnum; else FALSE.
-int isAck(struct Packet& pkt, int seqnum)
+int isSequentialAck(struct Packet& pkt, int seqnum)
 {
 	int result = FALSE;
 	
@@ -192,7 +164,7 @@ Constructs a packet from data by:
 	
 To make an empty packet (such as ACK/NACK packets), pass NULL or 0 for "char* data" param.
 */
-void MakePacket(int seqnum, int ack, char* data, struct Packet* pkt)
+void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt)
 {
 	cleanPacket(pkt);
 	
@@ -242,7 +214,7 @@ void SendFile(f* fptr, int sock, struct sockaddr_in* sin)
 		slen = strnlen(buf,127);
 		buf[slen] ='\0';
 		
-		SendData(sock,sin,buf,seqnum);
+		SendData(sock,sin,seqnum,(byte*)buf);
 		
 		//update seqnum, which in this case just alternates between 0 and 1
 		seqnum++;
@@ -272,7 +244,7 @@ Propagation delay constraint is why ethernet must be short range.
 			  goto 3
 		3) return
 */
-int SendData(int sock, struct sockaddr_in* addr, int seqnum, char* data)
+int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data)
 {
 	int response;
 	int sendSuccessful;
@@ -359,11 +331,11 @@ int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackP
 	//either a packet was received, or timeout occurred (other errors also possible, but timeout is most likely if packet was dropped)
 	if(rxed >= 0){
 		//received packet: extract the received packet and proceed to check its validity
-		DeserializePacket(buf,ackPkt);
+		deserializePacket(buf,ackPkt);
 		
 		//check the packet's status
 		if(!isCorrupt(ackPkt)){
-			if(isAck(pkt,seqnum)){
+			if(isSequentialAck(pkt,seqnum)){
 				printf("Successfully received ACK packet\r\n");
 				result = ACK;
 			}
@@ -408,7 +380,7 @@ void sendPacket(struct Packet* pkt, int sock, struct sockaddr_in * sin)
 
 	memset(sendBuf,0,RXTX_BUFFER_SIZE);
 	
-	SerializePacket(pkt,sendBuf);
+	serializePacket(pkt,sendBuf);
 	pktLen = strnlen(sendBuf,RXTX_BUFFER_SIZE-1);
 
 	if(pktLen > (PKT_DATA_MAX_LEN - 32)){

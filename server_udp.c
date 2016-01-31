@@ -7,6 +7,7 @@
 #include <netdb.h>
 #include <time.h>
 #include <fcntl.h>
+#include "common.h"
 
 #define SERVER_PORT 5432
 #define MAX_LINE 256
@@ -15,6 +16,7 @@ int main(int argc, char * argv[])
 {
 	char *fname;
         char buf[MAX_LINE];
+		byte ackBuf[RXTX_BUFFER_SIZE];
         struct sockaddr_in sin;
         int len;
         int s, i;
@@ -22,6 +24,7 @@ int main(int argc, char * argv[])
 	char seq_num = 1; 
 	FILE *fp;
 	struct Packet ackPkt;
+	struct Packet rxPkt;
 
         if (argc==2) {
                 fname = argv[1];
@@ -57,6 +60,10 @@ int main(int argc, char * argv[])
                 exit(1);
         }
 	
+	print("sizef struct Packet: %d\\n\r",(int)sizeof(struct Packet));
+	memset((void*)ackPkt,0,sizeof(struct Packet));
+	memset((void*)rxPkt,0,sizeof(struct Packet));
+	
 	while(1){
 		len = recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr *)&sin, &sock_len);
 		if(len == -1){
@@ -66,8 +73,8 @@ int main(int argc, char * argv[])
 			
 			
 			//send ACK for every packet received (this is for debugging the client)
-			makePacket(rxPkt.seqnum, ACK, 0, &ackPkt);
-			SerializePacket(&ackPkt,ackBuf);
+			makePacket(rxPkt.seqnum, ACK, (byte*)0, &ackPkt);
+			serializePacket(&ackPkt,ackBuf);
 			if(sendto(s, ackBuf, strnlen(ackBuf,PKT_DATA_MAX_LEN), 0, (struct sockaddr *)&sin, sock_len) < 0){
 				perror("SendTo Error\n");
 				exit(1);
