@@ -16,7 +16,6 @@
 #define TIMEOUT 5
 
 
-
 //TODO: get rid fo magic numbers and define maxes in terms of a single parameter, eg sizeof(struct Packet)
 #define PKT_DATA_MAX_LEN 65535
 #define RXTX_BUFFER_SIZE PKT_DATA_MAX_LEN + 64
@@ -27,7 +26,6 @@
 #define SERVER_PORT 5432
 #define MAX_RX_LINE 256
 #define MAX_LINE 80
-
 
 
 typedef unsigned char byte;

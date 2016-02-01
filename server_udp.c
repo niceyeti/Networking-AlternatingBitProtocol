@@ -6,7 +6,7 @@ int main(int argc, char * argv[])
         byte buf[MAX_RX_LINE];
 		byte ackBuf[RXTX_BUFFER_SIZE];
         struct sockaddr_in sin;
-        int len;
+        int len, dataLen;
         int s, i;
         struct timeval tv;
 	char seq_num = 1; 
@@ -88,13 +88,16 @@ int main(int argc, char * argv[])
 			}
 			*/
 
-
-
+			//copy the packet data to file
+			dataLen = bytesToLint(rxPkt.dataLen);
+			memcpy((void*)buf,(void*)rxPkt.data, dataLen);
+			buf[dataLen] = '\0';
+			printf(">>> rx'ed: %s\r\n",buf);
 			if(fputs((char *) buf, fp) < 1){
 				printf("fputs() error\n");
 			}
 		}
-        }
+    }
 	fclose(fp);
 	close(s);
 }

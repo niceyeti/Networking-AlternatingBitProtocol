@@ -136,13 +136,13 @@ int bytesToLint(const byte buf[4])
 void lintToBytes(const int i, byte obuf[4])
 {
 	unsigned int lint = htonl(i);
-	printf("%0X htonled to %0X\r\n",i,lint);
+	//printf("%0X htonled to %0X\r\n",i,lint);
 	obuf[3] = (byte)(lint & 0xFF);
 	obuf[2] = (byte)((lint & 0xFF00) >> 8);
 	obuf[1] = (byte)((lint & 0xFF0000) >> 16);
 	obuf[0] = (byte)((lint & 0xFF000000) >> 24);
 
-	printf("lintToBytes: %0X converted to %0X %0X %0X %0X  bytes[0-3]\r\n",lint,(int)obuf[0],(int)obuf[1],(int)obuf[2],(int)obuf[3]);
+	//printf("lintToBytes: %0X converted to %0X %0X %0X %0X  bytes[0-3]\r\n",lint,(int)obuf[0],(int)obuf[1],(int)obuf[2],(int)obuf[3]);
 }
 
 /*
@@ -185,7 +185,7 @@ void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt)
 	int dataLen, checksum, i;
 	cleanPacket(pkt);
 
-	testByteConversion();
+	//testByteConversion();
 
 	//set the sequence number	
 	lintToBytes(seqnum,pkt->seqnum);
@@ -390,8 +390,11 @@ int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackP
 		//received packet: extract the received packet and proceed to check its validity
 		deserializePacket(buf,ackPkt);
 		
+		//printPacket(ackPkt);
+		//getchar();
+
 		//check the packet's status
-		if(!isCorruptPacket(ackPkt)){
+		//if(!isCorruptPacket(ackPkt)){
 			if(isSequentialAck(ackPkt,seqnum)){
 				printf("Successfully received ACK packet\r\n");
 				result = ACK;
@@ -400,12 +403,12 @@ int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackP
 				result = NACK;
 				printf("NACK or incorrect seqnum received: pkt->seqnum=%d expected: %d ; pkt->ack=%s",bytesToLint(ackPkt->seqnum),seqnum, (ackPkt->ack == ACK ? "ACK" : "NACK"));
 			}
-		}
+		/*}
 		else{
 			printf("ERROR corrupt packet received. This should not be reachable in assignment's network conditions\r\n");
 			//just flag it as a NACK to signal failure
 			result = NACK;
-		}
+		}*/
 	}
 	else if(result == -1){
 		//only reachable if timeout occurred, though other errors are possible
