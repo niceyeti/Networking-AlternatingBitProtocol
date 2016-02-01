@@ -1,5 +1,7 @@
 #include "common.h"
 
+#define DBG 1
+
 int main(int argc, char * argv[])
 {
 	char *fname;
@@ -52,52 +54,66 @@ int main(int argc, char * argv[])
 	memset((void*)&ackPkt,0,sizeof(struct Packet));
 	memset((void*)&rxPkt,0,sizeof(struct Packet));
 	
-	printf("Server up and waiting at ANY interface on port %d\r\n",SERVER_PORT);
+	printf("Server up and awaiting packets at ANY interface on port %d\r\n",SERVER_PORT);
 
 	while(1){
+		/*
+		Receiver just blocks, waiting for input to arrive.
+		If rx:
+			if rx length is 1 and == 0x02:
+				treat as end of transmission, and exit comm loop
+			else:
+				-deserialize packet from rx message
+				-write packet data to file
+				-send ACK to sender
+				-go back to wait for input
+		*/
+
+
 		len = recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr *)&sin, &sock_len);
 		printf("rxed pkt of len=%d\r\n",len);
 		if(len == -1){
         	    perror("PError");
 		}
 		else if(len == 1){
-			
 			if (buf[0] == 0x02){
         	    		printf("Transmission Complete\n");
 				break;
 			}
-        	    	else{
-				perror("Error: Short packet\n");
+        	else{
+				perror("Error: Short packet??\n");
 			}
 		}
 		else if(len > 1){
 
-			deserializePacket(buf,&rxPkt);
-			printf("RXED client packet, seqnum=%d:  >%s<\r\n",bytesToLint(rxPkt.seqnum),rxPkt.data);
-			printPacket(&rxPkt);
+			//for debugging: randomly fail to acknowledge ~1/3 of packets to test client recovery from missing acks
+			if(DBG && !(random() % 3 == 0)){
+				//deserialize the received packet
+				deserializePacket(buf,&rxPkt);
+				printf("RXED client packet, seqnum=%d:  >%s<\r\n",bytesToLint(rxPkt.seqnum),rxPkt.data);
+				printPacket(&rxPkt);
 
-			//send ACK for every packet received (this is for debugging the client)
-			makePacket(bytesToLint(rxPkt.seqnum), ACK, 0, &ackPkt);
-			serializePacket(&ackPkt,ackBuf);
-			sendPacket(&ackPkt,s,&sin);
+				//send ACK for every packet received (this is for debugging the client)
+				//remember even the ACK could be dropped; hence sender needs to implement a timeout while waiting for ACK
+				makePacket(bytesToLint(rxPkt.seqnum), ACK, 0, &ackPkt);
+				serializePacket(&ackPkt,ackBuf);
+				sendPacket(&ackPkt,s,&sin);
 
-			/*
-			if(sendto(s, ackBuf, strnlen(ackBuf,PKT_DATA_MAX_LEN), 0, (struct sockaddr *)&sin, sock_len) < 0){
-				perror("SendTo Error\n");
-				exit(1);
+				//copy the packet data to file (making sure to null terminate it
+				dataLen = bytesToLint(rxPkt.dataLen);
+				dataLen = dataLen < PKT_DATA_MAX_LEN ? dataLen : (PKT_DATA_MAX_LEN - 1);
+				rxPkt.data[dataLen] = '\0';
+				printf(">>> rx'ed: %s\r\n",(char*)rxPkt.data);
+				if(fputs((char *)rxPkt.data, fp) < 1){
+					printf("fputs() error\n");
+				}
 			}
-			*/
-
-			//copy the packet data to file
-			dataLen = bytesToLint(rxPkt.dataLen);
-			memcpy((void*)buf,(void*)rxPkt.data, dataLen);
-			buf[dataLen] = '\0';
-			printf(">>> rx'ed: %s\r\n",buf);
-			if(fputs((char *) buf, fp) < 1){
-				printf("fputs() error\n");
+			else{
+				printf("Server dropped packet...");
 			}
 		}
     }
+
 	fclose(fp);
 	close(s);
 }

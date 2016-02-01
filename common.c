@@ -77,7 +77,7 @@ int getDataChecksum(struct Packet* pkt)
 	}
 
 	//only set checksum if there is any data; otherwise, it is set to zero
-	if(dtaLen > 0){
+	if(dataLen > 0){
 		for(i = 0, sum = 0; i < dataLen; i++){
 			sum += (int)pkt->data[i];
 		}
@@ -91,7 +91,7 @@ int isCorruptPacket(struct Packet* pkt)
 {
   	int isCorrupt, checksum;
 	byte buf[4];
-		
+
 	isCorrupt = CORRUPT;
 	
 	//check the header checksum
@@ -155,9 +155,6 @@ void lintToBytes(const int i, byte obuf[4])
 
 /*
 Fills chk[] with bytes of the checksum of data, some null-terminated data buffer.
-
-Algorithm:
-	
 */
 void setDataChecksum(struct Packet* pkt)
 {
@@ -166,17 +163,15 @@ void setDataChecksum(struct Packet* pkt)
 }
 
 //Sets the socket timeout
-void setSocketTimeout(int sockfd, int timeout_s)
+void setSocketTimeout(int sockfd, int timeout_s, int timeout_us)
 {	
 	struct timeval tv;
 
 	tv.tv_sec = timeout_s;  // second timeout
-	tv.tv_usec = 0;  // 0 us
+	tv.tv_usec = timeout_us;  // us timeout
 
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (void *)&tv,sizeof(struct timeval));
 }
-
-
 
 /*
 Constructs a packet from data by:
@@ -235,6 +230,8 @@ void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt)
 
 void printRawPacket(const struct Packet* pkt)
 {
+	int i;
+
 	printf("The packet, in byte order:\r\n");
 	for(i = 0; i < (sizeof(struct Packet) - 65000); i++){
 		printf("%0X ",(int)((char*)pkt)[i]);
@@ -256,7 +253,6 @@ void printPacket(const struct Packet* pkt)
 	//gets(buf);
 }
 
-
 /*
 Top level function for sending some file/stream. This implements the Kurose/Ross state rdt3.0 machine.
 */
@@ -267,7 +263,11 @@ void SendFile(FILE* fptr, int sock, struct sockaddr_in* sin)
 	char buf[128];
 	
 	memset(buf,0,128);
-	
+
+	//set socket options; this assumes its safe to overwrite any previous socket options!
+	//also: this is a requirement of the client state machine, which isn't apparent at this level. clean this if code is reused.
+	setSocketTimeout(sock,0,250000); // sets a 0.25s max wait time for ACK receipt
+
 	/* main loop: get and send lines of text */
 	seqnum = 0;
 	while(fgets(buf, 80, fptr) != NULL){
@@ -306,7 +306,7 @@ Propagation delay constraint is why ethernet must be short range.
 */
 int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data)
 {
-	int response;
+	int response, retries, failure;
 	int sendSuccessful;
 	int state;
 	//TODO: These belong in some c++ class
@@ -325,9 +325,11 @@ int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data)
 
 	state = SENDING;
 	sendSuccessful = FALSE;
+	failure = FALSE;
 	
 	//The state machine for sending a single packet: send until a positive ACK is received
-	while(sendSuccessful != TRUE ){
+	retries = 0;
+	while(sendSuccessful != TRUE && retries < MAX_RETRY_COUNT && failure == FALSE){
 
 		//send this packet
 		if(state == SENDING){
@@ -346,16 +348,20 @@ int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data)
 				//for all failure cases, just return to send state to re-send
 				//TODO: add retry-count limit
 				case NACK:
+					retries++;
 					state = SENDING;
 					break;
 				case CORRUPT:
+					retries++;
 					state = SENDING;
 					break;
 				case TIMEOUT:
+					retries++;
 					state = SENDING;
 					break;
 				
 				default:
+					failure = TRUE;
 					printf("ERROR unmapped state result from _awaitAck function\r\n");
 					break;
 			}
@@ -366,7 +372,7 @@ int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data)
 		}
 	}
 	
-	return TRUE;
+	return sendSuccessful && !failure;
 }
 
 /*
@@ -395,7 +401,7 @@ int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackP
 	rxed = recvfrom(sock,buf,RXTX_BUFFER_SIZE-1, 0, (struct sockaddr *)addr, &sock_len);
 	
 	//either a packet was received, or timeout occurred (other errors also possible, but timeout is most likely if packet was dropped)
-	if(rxed >= 0){
+	if(rxed > 0){
 		//received packet: extract the received packet and proceed to check its validity
 		deserializePacket(buf,ackPkt);
 		
@@ -419,15 +425,18 @@ int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackP
 			result = NACK;
 		}*/
 	}
-	else if(result == -1){
-		//only reachable if timeout occurred, though other errors are possible
-		printf("WARN timeout waiting for packet ACK\r\n");
-		result = TIMEOUT;
-	}
 	else{
-		//should be unreachable
-		printf("I have no idea what went wrong! \r\n");
-		result = NACK;
+		//a return of -1 and any of these errno's indicates SO_RCVTIMEO (socket timeout) according to linux.die.net/man/7/socket
+		if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINPROGRESS){
+			printf("WARN timeout waiting for packet ACK\r\n");
+			result = TIMEOUT;
+		}
+		else{
+			//all other errors are unexpected, right now
+			printf("ERROR socket foo recvfrom returned -1 with unmapped errno=%d\r\n%s",(int)errno,strerror(errno));
+			//This result isn't mapped or expected in this assignment; just return NACK
+			result = NACK;
+		}
 	}
 	
 	return result;
