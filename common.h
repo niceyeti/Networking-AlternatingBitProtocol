@@ -62,6 +62,7 @@ void lintToBytes(const int i, byte obuf[4]);
 void setDataChecksum(struct Packet* pkt);
 void setSocketTimeout(int sockfd, int timeout_s);
 void printPacket(const struct Packet* pkt);
+void printRawPacket(const struct Packet* pkt);
 void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt);
 void SendFile(FILE* fptr, int sock, struct sockaddr_in* sin);
 int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data);

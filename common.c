@@ -40,7 +40,8 @@ int isSequentialAck(struct Packet* pkt, int seqnum)
 
 /*
 	Returns sum of byte mod some-16b-prime of all the header fields.
-	This includes the data-checksum, but not the data.
+	This includes the data-checksum, but not the data. No other modifications
+	can be made to the header after setting the checksum.
 */
 int getHeaderChecksum(struct Packet* pkt)
 {
@@ -66,11 +67,18 @@ int getHeaderChecksum(struct Packet* pkt)
 //Get the checksum of some data buffer, given its length in bytes. Returns 0 if datalen is zero (no data)
 int getDataChecksum(struct Packet* pkt)
 {
-	int i, sum, checksum = 0;
+	int i, dataLen, sum, checksum = 0;
 	
+	dataLen = bytesToLint(pkt->dataLen);
+
+	if(dataLen > PKT_DATA_MAX_LEN){
+		printf("ERROR overrun in getDataChecksum(): pkt->dataLen > PKT_DATA_LEN_MAX\r\n");
+		return 0;
+	}
+
 	//only set checksum if there is any data; otherwise, it is set to zero
-	if(pkt->dataLen > 0){
-		for(i = 0, sum = 0; i < bytesToLint(pkt->dataLen); i++){
+	if(dtaLen > 0){
+		for(i = 0, sum = 0; i < dataLen; i++){
 			sum += (int)pkt->data[i];
 		}
 		checksum = sum % U16_PRIME;
@@ -208,7 +216,7 @@ void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt)
 	//do the data checksum; must be done before the header checksum
 	setDataChecksum(pkt);
 	
-	//set the ack field (also must be done before )
+	//set the ack field (also must be done before cksum)
 	pkt->ack = ack == ACK ? (byte)ACK : (byte)NACK;
 	
 	//an apparent sequence of bytes, when viewed in wireshark
@@ -223,15 +231,16 @@ void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt)
 
 	printf("pkt source data: seqnum=%d ACK=%d data=%s\r\n",seqnum,ack,(char*)data);
 	printPacket(pkt);
-/*
+}
+
+void printRawPacket(const struct Packet* pkt)
+{
 	printf("The packet, in byte order:\r\n");
 	for(i = 0; i < (sizeof(struct Packet) - 65000); i++){
-		printf("%3d ",(int)((char*)pkt)[i]);
+		printf("%0X ",(int)((char*)pkt)[i]);
 		if(i % 8 == 7)
 			printf("\r\n");
 	}
-*/
-
 }
 
 void printPacket(const struct Packet* pkt)
