@@ -9,10 +9,10 @@
 #include <netdb.h>
 #include <fcntl.h>
 
-#define ACK 0
-#define NACK 1
-#define CORRUPT 2
-#define NOT_CORRUPT 3
+#define ACK 1
+#define NACK 2
+#define CORRUPT 3
+#define NOT_CORRUPT 4
 #define TIMEOUT 5
 
 
@@ -20,15 +20,15 @@
 //TODO: get rid fo magic numbers and define maxes in terms of a single parameter, eg sizeof(struct Packet)
 #define PKT_DATA_MAX_LEN 65535
 #define RXTX_BUFFER_SIZE PKT_DATA_MAX_LEN + 64
+#define PKT_HEADER_SIZE 21
 #define U16_PRIME 65497
 #define TRUE 1
 #define FALSE 0
-
-
 #define SERVER_PORT 5432
 #define MAX_RX_LINE 256
-#define SERVER_PORT 5432
 #define MAX_LINE 80
+
+
 
 typedef unsigned char byte;
 
@@ -51,6 +51,7 @@ struct Packet{
 	byte data[PKT_DATA_MAX_LEN];
 };
 
+void testByteConversion();
 void serializePacket(struct Packet* pkt, byte buf[RXTX_BUFFER_SIZE]);
 void deserializePacket(const char buf[RXTX_BUFFER_SIZE], struct Packet* pkt);
 int isAck(struct Packet* pkt);
@@ -62,6 +63,7 @@ int bytesToLint(const byte buf[4]);
 void lintToBytes(const int i, byte obuf[4]);
 void setDataChecksum(struct Packet* pkt);
 void setSocketTimeout(int sockfd, int timeout_s);
+void printPacket(const struct Packet* pkt);
 void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt);
 void SendFile(FILE* fptr, int sock, struct sockaddr_in* sin);
 int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data);

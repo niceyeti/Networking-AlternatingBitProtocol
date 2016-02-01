@@ -108,24 +108,41 @@ int isCorruptPacket(struct Packet* pkt)
 }
 //////////////// end packet class ///////////////
 
+void testByteConversion()
+{
+	char buf[4];
+	unsigned int y, x = 34;
+
+	printf("converting: %0X\r\n",x);
+	lintToBytes(x,buf);
+	y = bytesToLint(buf);
+	printf("converted: %0X\r\n",y);
+	if(y == x)
+		printf("pass\r\n");
+	else
+		printf("fail\r\n");
+}
+
 int bytesToLint(const byte buf[4])
 {
-	int lint = 0;
-	lint  = (int)buf[3] & 0xFF;
-	lint |= (int)buf[2] & 0xFF00;
-	lint |= (int)buf[1] & 0xFF0000;
-	lint |= (int)buf[0] & 0xFF000000;
+	unsigned int lint = 0;
+	lint  = (unsigned int)buf[3] & 0xFF;
+	lint |= (((unsigned int)buf[2] & 0xFF) << 8);
+	lint |= (((unsigned int)buf[1] & 0xFF) << 16);
+	lint |= (((unsigned int)buf[0] & 0xFF) << 24);
 	
-    return htonl(lint);	
+    return ntohl(lint);
 }
 void lintToBytes(const int i, byte obuf[4])
 {
-	int lint = ntohl(i);
-	
+	unsigned int lint = htonl(i);
+	printf("%0X htonled to %0X\r\n",i,lint);
 	obuf[3] = (byte)(lint & 0xFF);
-	obuf[2] = (byte)(lint & 0xFF00);
-	obuf[1] = (byte)(lint & 0xFF0000);
-	obuf[0] = (byte)(lint & 0xFF000000);
+	obuf[2] = (byte)((lint & 0xFF00) >> 8);
+	obuf[1] = (byte)((lint & 0xFF0000) >> 16);
+	obuf[0] = (byte)((lint & 0xFF000000) >> 24);
+
+	printf("lintToBytes: %0X converted to %0X %0X %0X %0X  bytes[0-3]\r\n",lint,(int)obuf[0],(int)obuf[1],(int)obuf[2],(int)obuf[3]);
 }
 
 /*
@@ -165,8 +182,10 @@ To make an empty packet (such as ACK/NACK packets), pass NULL or 0 for "char* da
 */
 void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt)
 {
-	int dataLen, checksum;
+	int dataLen, checksum, i;
 	cleanPacket(pkt);
+
+	testByteConversion();
 
 	//set the sequence number	
 	lintToBytes(seqnum,pkt->seqnum);
@@ -179,6 +198,7 @@ void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt)
 			printf("ERROR length of data too long in makePacket: %d\r\n",dataLen);
 		}
 		strncpy((char*)pkt->data,data,dataLen);
+		printf("datalen=%d\r\n",dataLen);
 	}
 	else{
 		lintToBytes(0,pkt->dataLen);
@@ -192,32 +212,59 @@ void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt)
 	pkt->ack = ack == ACK ? (byte)ACK : (byte)NACK;
 	
 	//an apparent sequence of bytes, when viewed in wireshark
-	pkt->name[0] = 0xFF;
-	pkt->name[1] = 0;
-	pkt->name[2] = 0xFF;
-	pkt->name[3] = 0;
+	pkt->name[0] = 'Z';
+	pkt->name[1] = 'Z';
+	pkt->name[2] = 'Z';
+	pkt->name[3] = 'Z';
 	
 	//must be done only after data checksum is set
 	checksum = getHeaderChecksum(pkt);
 	lintToBytes(checksum,pkt->hdrChecksum);
+
+	printf("pkt source data: seqnum=%d ACK=%d data=%s\r\n",seqnum,ack,(char*)data);
+	printPacket(pkt);
+/*
+	printf("The packet, in byte order:\r\n");
+	for(i = 0; i < (sizeof(struct Packet) - 65000); i++){
+		printf("%3d ",(int)((char*)pkt)[i]);
+		if(i % 8 == 7)
+			printf("\r\n");
+	}
+*/
+
 }
+
+void printPacket(const struct Packet* pkt)
+{
+	//char buf[256];
+	printf("ACK:  %d\r\n",(int)pkt->ack);
+	printf("SEQ:  %d %d %d %d\r\n",pkt->seqnum[0],pkt->seqnum[1],pkt->seqnum[2],pkt->seqnum[3]);
+	printf("DLEN: %d %d %d %d\r\n",pkt->dataLen[0],pkt->dataLen[1],pkt->dataLen[2],pkt->dataLen[3]);
+	printf("HSUM: %d %d %d %d\r\n",pkt->hdrChecksum[0],pkt->hdrChecksum[1],pkt->hdrChecksum[2],pkt->hdrChecksum[3]);
+	printf("NAME: %d %d %d %d\r\n",pkt->name[0],pkt->name[1],pkt->name[2],pkt->name[3]);
+	printf("DSUM: %d %d %d %d\r\n",pkt->dataChecksum[0],pkt->dataChecksum[1],pkt->dataChecksum[2],pkt->dataChecksum[3]);
+	printf("DATA: %s\r\n",pkt->data);
+	//gets(buf);
+}
+
 
 /*
 Top level function for sending some file/stream. This implements the Kurose/Ross state rdt3.0 machine.
 */
 void SendFile(FILE* fptr, int sock, struct sockaddr_in* sin)
 {
-	int seqnum = 0;
+	int seqnum;
 	int slen;
 	char buf[128];
 	
 	memset(buf,0,128);
 	
 	/* main loop: get and send lines of text */
+	seqnum = 0;
 	while(fgets(buf, 80, fptr) != NULL){
-		slen = strnlen(buf,127);
+		slen = strnlen(buf,80);
 		buf[slen] ='\0';
-		
+
 		SendData(sock,sin,seqnum,(byte*)buf);
 		
 		//update seqnum, which in this case just alternates between 0 and 1
@@ -266,6 +313,7 @@ int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data)
 	memset((void*)&ackPkt,0,sizeof(struct Packet));
 	
 	makePacket(seqnum,ACK,data,&txPkt);
+
 	state = SENDING;
 	sendSuccessful = FALSE;
 	
@@ -332,6 +380,8 @@ int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackP
 	
 	memset(buf,0,RXTX_BUFFER_SIZE);
 	
+	printf("waiting for ack with seqnum=%d...\r\n",seqnum);
+
 	//block until we receive an ACK packet, or timeout occurs (returns -1)
 	rxed = recvfrom(sock,buf,RXTX_BUFFER_SIZE-1, 0, (struct sockaddr *)addr, &sock_len);
 	
@@ -376,6 +426,11 @@ void cleanPacket(struct Packet* pkt)
 	memset((void*)pkt,0,sizeof(struct Packet));
 }
 
+int getPacketSize(struct Packet* pkt)
+{
+  return bytesToLint(pkt->dataLen) + PKT_HEADER_SIZE;
+}
+
 /*
 The raw send utility. Serializes a packet into the provided sendBuf, then sends
 it over udp.
@@ -388,7 +443,7 @@ void sendPacket(struct Packet* pkt, int sock, struct sockaddr_in * sin)
 	memset(sendBuf,0,RXTX_BUFFER_SIZE);
 	
 	serializePacket(pkt,sendBuf);
-	pktLen = strnlen(sendBuf,RXTX_BUFFER_SIZE-1);
+	pktLen = getPacketSize(pkt);
 
 	if(pktLen > (PKT_DATA_MAX_LEN - 32)){
 		printf("WARN possible packet data overrun: pkt data size > %d\r\n",(PKT_DATA_MAX_LEN-32));
