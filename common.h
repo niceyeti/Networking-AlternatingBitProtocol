@@ -29,7 +29,7 @@
 #define SERVER_PORT 5432
 #define MAX_RX_LINE 256
 #define MAX_LINE 80
-
+#define DBG 0
 
 typedef unsigned char byte;
 

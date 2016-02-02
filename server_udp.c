@@ -1,14 +1,12 @@
 #include "common.h"
 
-#define DBG 1
-
 int main(int argc, char * argv[])
 {
   char *fname;
   byte buf[MAX_RX_LINE];
   byte ackBuf[RXTX_BUFFER_SIZE];
   struct sockaddr_in sin;
-  int len, dataLen;
+  int len, dataLen, receiverSeqnum, firstSeqnum;
   int s, i;
   struct timeval tv;
   char seq_num = 1; 
@@ -54,6 +52,7 @@ int main(int argc, char * argv[])
   memset((void*)&rxPkt,0,sizeof(struct Packet));
   
   printf("Server up and awaiting packets at ANY interface on port %d\r\n",SERVER_PORT);
+  firstSeqnum = TRUE;
 
   /*
   Receiver just blocks, waiting for input to arrive.
@@ -70,43 +69,55 @@ int main(int argc, char * argv[])
     len = recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr *)&sin, &sock_len);
     printf("rxed pkt of len=%d\r\n",len);
     if(len == -1){
-              perror("PError");
+      perror("PError");
     }
     else if(len == 1){
       if (buf[0] == 0x02){
-                  printf("Transmission Complete\n");
+        printf("Transmission Complete\n");
         break;
       }
-          else{
+      else{
         perror("Error: Short packet??\n");
       }
     }
     else if(len > 1){
-
-      //for debugging: randomly fail to acknowledge ~1/3 of packets to test client recovery from missing acks
+      //for local debugging: randomly fail to acknowledge ~1/3 of packets to test client recovery from missing acks
       if(DBG && !(random() % 3 == 0)){
+        printf("Server dropped packet...");
+      }
+      else{
         //deserialize the received packet
         deserializePacket(buf,&rxPkt);
+        
+        //seqnum is part of the receiver's state, and must be initialized in alignment with the sender; this bootstraps it on the first received packet.
+        //Subsequent packets are aligned with this seqnum, rejecting dupes that are re-sent if the receiver ACK packet is dropped.
+        if(firstSeqnum){
+          firstSeqnum = FALSE;
+          receiverSeqnum = bytesToLint(rxPkt.seqnum);
+        }
         printf("RXED client packet, seqnum=%d:  >%s<\r\n",bytesToLint(rxPkt.seqnum),rxPkt.data);
         printPacket(&rxPkt);
 
-        //send ACK for every packet received (this is for debugging the client)
+        //send ACK for every packet received
         //remember even the ACK could be dropped; hence sender needs to implement a timeout while waiting for ACK
         makePacket(bytesToLint(rxPkt.seqnum), ACK, 0, &ackPkt);
         serializePacket(&ackPkt,ackBuf);
         sendPacket(&ackPkt,s,&sin);
 
-        //copy the packet data to file (making sure to null terminate it
-        dataLen = bytesToLint(rxPkt.dataLen);
-        dataLen = dataLen < PKT_DATA_MAX_LEN ? dataLen : (PKT_DATA_MAX_LEN - 1);
-        rxPkt.data[dataLen] = '\0';
-        printf(">>> rx'ed: %s\r\n",(char*)rxPkt.data);
-        if(fputs((char *)rxPkt.data, fp) < 1){
-          printf("fputs() error\n");
+        //if this is a new packet, copy the packet data to file (making sure to null terminate it)
+        if(receiverSeqnum != bytesToLint(rxPkt.seqnum)){
+          //receiverSeqnum = bytesToLint(rxPkt.seqnum);
+          dataLen = bytesToLint(rxPkt.dataLen);
+          dataLen = dataLen < PKT_DATA_MAX_LEN ? dataLen : (PKT_DATA_MAX_LEN - 1);
+          rxPkt.data[dataLen] = '\0';
+          printf(">>> rx'ed: %s\r\n",(char*)rxPkt.data);
+          if(fputs((char *)rxPkt.data, fp) < 1){
+            printf("fputs() error\n");
+          }
+
+          //update the seqnum; for the alternating bit protocol, the seqnum just alternates between 0 and 1
+          receiverSeqnum = (receiverSeqnum + 1) % 2;
         }
-      }
-      else{
-        printf("Server dropped packet...");
       }
     }
   }
