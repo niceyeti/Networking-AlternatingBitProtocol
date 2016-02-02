@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #define ACK 1
 #define NACK 2
@@ -15,7 +16,8 @@
 #define NOT_CORRUPT 4
 #define TIMEOUT 5
 
-
+//the number of times the client will re-send a packet for which it hasn't received an ack
+#define MAX_RETRY_COUNT 1000 //basically infinity, for the sake of this assignment
 
 //TODO: get rid fo magic numbers and define maxes in terms of a single parameter, eg sizeof(struct Packet)
 #define PKT_DATA_MAX_LEN 65535
@@ -27,7 +29,6 @@
 #define SERVER_PORT 5432
 #define MAX_RX_LINE 256
 #define MAX_LINE 80
-
 
 
 typedef unsigned char byte;
@@ -62,8 +63,9 @@ int isCorruptPacket(struct Packet* pkt);
 int bytesToLint(const byte buf[4]);
 void lintToBytes(const int i, byte obuf[4]);
 void setDataChecksum(struct Packet* pkt);
-void setSocketTimeout(int sockfd, int timeout_s);
+void setSocketTimeout(int sockfd, int timeout_s, int timeout_us);
 void printPacket(const struct Packet* pkt);
+void printRawPacket(const struct Packet* pkt);
 void makePacket(int seqnum, int ack, byte* data, struct Packet* pkt);
 void SendFile(FILE* fptr, int sock, struct sockaddr_in* sin);
 int SendData(int sock, struct sockaddr_in* addr, int seqnum, byte* data);
