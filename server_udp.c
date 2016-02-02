@@ -93,9 +93,10 @@ int main(int argc, char * argv[])
         //Subsequent packets are aligned with this seqnum, rejecting dupes that are re-sent if the receiver ACK packet is dropped.
         if(firstSeqnum){
           firstSeqnum = FALSE;
-          receiverSeqnum = bytesToLint(rxPkt.seqnum);
+          //careful here: we write data to file based on a new seqnum; so don't initialize seqnum to rxPkt.seqnum, or the first line will not be written
+          receiverSeqnum = (bytesToLint(rxPkt.seqnum) + 1) % 2;
         }
-        printf("RXED client packet, seqnum=%d:  >%s<\r\n",bytesToLint(rxPkt.seqnum),rxPkt.data);
+        printf("Receiver RXED client packet, seqnum=%d:  >%s<\r\n",bytesToLint(rxPkt.seqnum),rxPkt.data);
         printPacket(&rxPkt);
 
         //send ACK for every packet received
@@ -110,13 +111,16 @@ int main(int argc, char * argv[])
           dataLen = bytesToLint(rxPkt.dataLen);
           dataLen = dataLen < PKT_DATA_MAX_LEN ? dataLen : (PKT_DATA_MAX_LEN - 1);
           rxPkt.data[dataLen] = '\0';
-          printf(">>> rx'ed: %s\r\n",(char*)rxPkt.data);
+          printf("Receiver rx'ed data: %s\r\n",(char*)rxPkt.data);
           if(fputs((char *)rxPkt.data, fp) < 1){
             printf("fputs() error\n");
           }
 
           //update the seqnum; for the alternating bit protocol, the seqnum just alternates between 0 and 1
           receiverSeqnum = (receiverSeqnum + 1) % 2;
+        }
+        else{
+          printf("Sender dupe received with pkt.seqnum==%d receiver.seqnum=%d\r\n",bytesToLint(rxPkt.seqnum),receiverSeqnum);
         }
       }
     }

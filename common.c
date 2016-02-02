@@ -395,7 +395,7 @@ int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackP
   
   memset(buf,0,RXTX_BUFFER_SIZE);
   
-  printf("waiting for ack with seqnum=%d...\r\n",seqnum);
+  printf("sender waiting for ack with seqnum=%d...\r\n",seqnum);
 
   //block until we receive an ACK packet, or timeout occurs (returns -1)
   rxed = recvfrom(sock,buf,RXTX_BUFFER_SIZE-1, 0, (struct sockaddr *)addr, &sock_len);
@@ -411,12 +411,12 @@ int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackP
     //check the packet's status
     //if(!isCorruptPacket(ackPkt)){
       if(isSequentialAck(ackPkt,seqnum)){
-        printf("Successfully received ACK packet\r\n");
+        printf("Sender successfully received ACK packet\r\n");
         result = ACK;
       }
       else{
         result = NACK;
-        printf("NACK or incorrect seqnum received: pkt->seqnum=%d expected: %d ; pkt->ack=%s",bytesToLint(ackPkt->seqnum),seqnum, (ackPkt->ack == ACK ? "ACK" : "NACK"));
+        printf("Sender NACK or incorrect seqnum received: pkt->seqnum=%d expected: %d ; pkt->ack=%s",bytesToLint(ackPkt->seqnum),seqnum, (ackPkt->ack == ACK ? "ACK" : "NACK"));
       }
     /*}
     else{
@@ -428,12 +428,12 @@ int awaitAck(int sock, struct sockaddr_in* addr, int seqnum, struct Packet* ackP
   else{
     //a return of -1 and any of these errno's indicates SO_RCVTIMEO (socket timeout) according to linux.die.net/man/7/socket
     if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINPROGRESS){
-      printf("WARN timeout waiting for packet ACK\r\n");
+      printf("Sender WARN timeout waiting for packet ACK\r\n");
       result = TIMEOUT;
     }
     else{
       //all other errors are unexpected, right now
-      printf("ERROR socket foo recvfrom returned -1 with unmapped errno=%d\r\n%s",(int)errno,strerror(errno));
+      printf("Sender ERROR socket foo recvfrom returned -1 with unmapped errno=%d\r\n%s",(int)errno,strerror(errno));
       //This result isn't mapped or expected in this assignment; just return NACK
       result = NACK;
     }
